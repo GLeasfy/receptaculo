@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Receptáculo</title>
+<link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+<style>
+  /* ============================================================
+     GONER MAKER — estilo inspirado em Deltarune (uso pessoal)
+     ============================================================ */
+  html,body{margin:0;padding:0;background:#000;color:#fff;height:100%;}
+  body{
+    font-family: "Courier New", Courier, monospace;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh; overflow:hidden; cursor:default;
+    image-rendering: pixelated;
+  }
+  #stage{
+    width:min(880px, 92vw);
+    padding:28px;
+    text-align:center;
+  }
+  #question{
+    font-size: clamp(20px, 3.2vw, 34px);
+    line-height:1.4;
+    min-height: 3.5em;
+    white-space:pre-wrap;
+    letter-spacing:1px;
+    text-shadow: 0 0 6px rgba(255,255,255,0.15);
+  }
+  #choices{
+    margin-top:36px;
+    display:flex; flex-wrap:wrap; gap:18px 40px;
+    justify-content:center;
+  }
+  .choice{
+    font-size: clamp(18px, 2.4vw, 26px);
+    padding: 6px 14px;
+    color:#fff; background:transparent; border:none;
+    font-family:inherit; letter-spacing:1px;
+    cursor:pointer; position:relative;
+    opacity:0; transform: translateY(6px);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .choice.show{opacity:1; transform:none;}
+  .choice::before{
+    content:"♥"; position:absolute; left:-22px; top:50%;
+    transform: translateY(-50%); color:#ff2b2b;
+    opacity:0; transition:opacity .1s;
+  }
+  .choice:hover::before, .choice:focus::before{opacity:1; outline:none;}
+  .choice:focus{outline:none;}
+  #textInput{
+    margin-top:28px;
+    width:min(560px, 90%);
+    background:#000; color:#fff; border:2px solid #fff;
+    padding:10px 14px; font-family:inherit; font-size:20px;
+    letter-spacing:1px; text-align:center; display:none;
+  }
+  #textInput:focus{outline:none; box-shadow:0 0 0 2px #fff inset;}
+  #hint{
+    margin-top:14px; font-size:13px; opacity:.5; letter-spacing:2px;
+  }
+  #stage.final #question{ font-size: clamp(22px, 3vw, 30px); }
+  .flicker{ animation: flick 2.6s infinite steps(1); }
+  @keyframes flick{
+    0%,97%,100%{opacity:1;} 98%{opacity:.4;} 99%{opacity:.8;}
+  }
+  .shake{ animation: shake .35s linear; }
+  @keyframes shake{
+    0%,100%{transform:translate(0,0);}
+    25%{transform:translate(-3px,2px);}
+    50%{transform:translate(3px,-2px);}
+    75%{transform:translate(-2px,-2px);}
+  }
+</style>
+</head>
+<body>
+<audio id="music" loop>
+  <source src="music.mp3" type="audio/mp3">
+</audio>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const musica = document.getElementById('music');
+
+    musica.play().catch(error => {
+      console.log("Autoplay bloqueado pelo navegador. Aguardando interação do usuário.");
+      
+      // Se o navegador bloquear, toca assim que o usuário clicar em qualquer lugar da tela
+      document.addEventListener('click', () => {
+        musica.play();
+      }, { once: true }); // Executa apenas uma vez
+    });
+  });
+</script>
+<div id="stage">
+  <div id="question" class="flicker"></div>
+  <div id="choices"></div>
+  <input id="textInput" type="text" autocomplete="off" placeholder="digite e pressione ENTER" />
+  <div id="hint"></div>
+</div>
+
+<script>
+/* ==================================================================
+   CONFIGURAÇÃO — edite tudo aqui
+   ==================================================================
+   • QUESTIONS: lista de perguntas. Cada uma tem:
+        text     : a pergunta exibida
+        choices  : array de opções (deixe [] para pedir resposta livre)
+        key      : nome do campo (pra você identificar as respostas)
+   • ENDING   : texto final mostrado depois de responder tudo
+   • SUBMIT   : para onde enviar as respostas SILENCIOSAMENTE
+        mode: "googleForms" | "webhook" | "none"
+        --- googleForms ---
+        formUrl   : URL de "formResponse" do Google Forms
+                    (troque /viewform por /formResponse)
+        entries   : mapa { key_da_pergunta: "entry.1234567890" }
+                    (pegue os IDs entry.XXXX inspecionando o form
+                     ou usando o link pré-preenchido)
+        --- webhook ---
+        url       : endpoint que aceita POST JSON
+   ================================================================== */
+
+const QUESTIONS = [
+  { key:"nome",     text:"Diga-me seu nome.",                 choices:[] },
+  { key:"forma",     text:"Qual destas formas te agrada?",             choices:["Armadura","Manto","Cores","Espinhos","Máscaras"] },
+  { key:"cores",    text:"Qual destas cores te transmite segurança?",              choices:["Azul","Vermelho","Verde","Amarelo","Preto","Branco", "Roxo"] },
+  { key:"valoriza",    text:"O que você mais valoriza?",                 choices:["Coragem","Conhecimento","Liberdade","Lealdade","Poder"] },
+  { key:"lembrado",   text:"Você prefere ser lembrado ou compreendido?",                choices:["Lembrado","Compreendido"] },
+  { key:"triste",   text:"Qual destas situações parece mais triste?",                choices:["Nunca ser amado","Nunca existir"] },
+  { key:"segredo",  text:"Conte um segredo.",                 choices:[] },
+  { key:"presente",   text:"Escolha um presente.",                choices:["Chave","Coroa","Espelho","Relógio","Máscara"] },
+  { key:"abandono",  text:"Se precisasse abandonar alguém para sobreviver, você o faria?", choices:["Sim","Não"] },
+  { key:"substituidas",  text:"Pessoas podem ser substituídas?", choices:["Sim","Não"] },
+  { key:"porta",   text:"Você abriria uma porta que não deveria existir?",                choices:["Sim","Não","Eu já abri"] },
+  { key:"multidao",  text:"O que você vê ao olhar para uma multidão?", choices:["Pessoas","Histórias","Obstáculos","Números","Nada especial"] },
+  { key:"valor",      text:"Você acredita que sua vida tem valor?", choices:["Sim","Não","Não sei"] },
+  { key:"honestidade",      text:"Você foi honesto com suas respostas?", choices:["Sim","Não"] },
+  { key:"fim",      text:"Veja.\n\nVocê sente orgulho do que criou?", choices:["Sim","Sim"] },
+];
+
+const ENDING = "Excelente.\n\nVerdadeiramente. Excelente.\n\nSuas escolhas foram registradas.";
+
+const SUBMIT = {
+  mode: "googleForms",   // "googleForms" | "webhook" | "none"
+
+  // ---- Google Forms ----
+  formUrl: "https://docs.google.com/forms/d/e/1FAIpQLSevbsB3ebLNefP3A7_SfNIWGqYcwvlzuj1MSeJKw36533jFlg/formResponse",
+  entries: {
+    nome:    "entry.546346077",
+    forma:    "entry.1374628427",
+    cores:   "entry.1966260884",
+    valoriza:   "entry.1628199019",
+    lembrado:  "&entry.848383444",
+    triste: "entry.997807575",
+    segredo: "entry.1493050143",
+    presente: "entry.662064430",
+    abandono: "entry.252822171",
+    substituidas: "entry.1338097880",
+    porta: "entry.938807875",
+    multidao: "entry.1211805462",
+    valor: "entry.787402098",
+    honestidade: "entry.419238422",
+    fim:     "entry.2146412011",
+  },
+
+  // ---- Webhook alternativo ----
+  webhook: { url: "" },
+};
+
+/* ================================================================== */
+
+const $q = document.getElementById("question");
+const $c = document.getElementById("choices");
+const $i = document.getElementById("textInput");
+const $s = document.getElementById("stage");
+
+const answers = {};
+let idx = 0;
+let typing = false;
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function typewrite(text){
+  typing = true;
+  $q.textContent = "";
+  for (const ch of text){
+    $q.textContent += ch;
+    await sleep(ch === "\n" ? 220 : 28 + Math.random()*30);
+  }
+  typing = false;
+}
+
+async function showChoices(choices){
+  $c.innerHTML = "";
+  $i.style.display = "none";
+  if (!choices.length){
+    $i.style.display = "inline-block";
+    $i.value = "";
+    $i.focus();
+    return;
+  }
+  choices.forEach((label,i)=>{
+    const b = document.createElement("button");
+    b.className = "choice";
+    b.textContent = label;
+    b.addEventListener("click", ()=>pick(label));
+    $c.appendChild(b);
+    setTimeout(()=>b.classList.add("show"), 120*i);
+  });
+}
+
+async function ask(){
+  const q = QUESTIONS[idx];
+  await typewrite(q.text);
+  await showChoices(q.choices);
+}
+
+function pick(value){
+  const q = QUESTIONS[idx];
+  answers[q.key] = value;
+  $s.classList.add("shake");
+  setTimeout(()=>$s.classList.remove("shake"), 350);
+  idx++;
+  $c.innerHTML = "";
+  $i.style.display = "none";
+  if (idx >= QUESTIONS.length) finish();
+  else ask();
+}
+
+$i.addEventListener("keydown", e=>{
+  if (e.key === "Enter" && !typing){
+    const v = $i.value.trim();
+    if (!v) return;
+    pick(v);
+  }
+});
+
+async function finish(){
+  submitSilently(answers); // fire and forget
+  $q.classList.remove("flicker");
+  await typewrite(ENDING);
+}
+
+/* ---------- envio silencioso ---------- */
+function submitSilently(data){
+  try{
+    if (SUBMIT.mode === "googleForms") sendGoogleForm(data);
+    else if (SUBMIT.mode === "webhook" && SUBMIT.webhook.url) sendWebhook(data);
+    // salva localmente também, por segurança
+    const log = JSON.parse(localStorage.getItem("goner_log") || "[]");
+    log.push({ at:new Date().toISOString(), data });
+    localStorage.setItem("goner_log", JSON.stringify(log));
+  }catch(e){ /* silencioso */ }
+}
+
+function sendGoogleForm(data){
+  const fd = new FormData();
+  for (const key in SUBMIT.entries){
+    const entryId = SUBMIT.entries[key];
+    if (entryId && data[key] != null) fd.append(entryId, data[key]);
+  }
+  // no-cors: o Google não devolve resposta legível, mas grava a submissão
+  fetch(SUBMIT.formUrl, { method:"POST", mode:"no-cors", body:fd })
+    .catch(()=>{});
+}
+
+function sendWebhook(data){
+  fetch(SUBMIT.webhook.url, {
+    method:"POST",
+    mode:"no-cors",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ at:new Date().toISOString(), answers:data })
+  }).catch(()=>{});
+}
+
+/* start */
+ask();
+</script>
+</body>
+</html>
