@@ -121,6 +121,11 @@
         --- webhook ---
         url       : endpoint que aceita POST JSON
    ================================================================== */
+const INTRO = [
+  "Olá.",
+  "Estamos.\n\nconectados?",
+  "Ótimo.\n\nEntão vamos começar.",
+];
 
 const QUESTIONS = [
   { key:"nome",     text:"Diga-me seu nome.",                 choices:[] },
@@ -146,8 +151,17 @@ const QUESTIONS = [
 
 const ENDING = "Excelente.\n\nVerdadeiramente. Excelente.\n\nSuas escolhas foram registradas.";
 
+/* ===== SEGREDOS / EASTER EGGS ===== */
+
+const SECRET_FIELDS = ["nome"];
+const SECRETS = {
+  "gaster":  ["...","🏱︎✌︎☼︎☜︎.","████████","🏱︎✌︎☼︎☜︎ 👎︎☜︎ 💣︎☜︎☠︎❄︎✋︎☼︎","..."],
+  "goner":   ["Sim.","Você é um de nós agora.","..."],
+  "deltarune":   ["Finalmente.","Meu DeltaRune.","..."],
+};
+
 const SUBMIT = {
-  mode: "googleForms",   // "googleForms" | "webhook" | "none"
+  mode: "googleForms",
 
   // ---- Google Forms ----
   formUrl: "https://docs.google.com/forms/d/e/1FAIpQLSevbsB3ebLNefP3A7_SfNIWGqYcwvlzuj1MSeJKw36533jFlg/formResponse",
@@ -200,15 +214,25 @@ async function typewrite(text){
   typing = false;
 }
 
-async function showChoices(choices){
+async function showChoices(choices, isMessage){
   $c.innerHTML = "";
   $i.style.display = "none";
+
+  if (isMessage){
+    const hint = document.createElement("div");
+    hint.textContent = "pressione ENTER";
+    hint.style.cssText = "margin-top:28px;font-size:14px;opacity:.5;letter-spacing:2px;";
+    $c.appendChild(hint);
+    return;
+  }
+
   if (!choices.length){
     $i.style.display = "inline-block";
     $i.value = "";
     $i.focus();
     return;
   }
+
   choices.forEach((label,i)=>{
     const b = document.createElement("button");
     b.className = "choice";
@@ -222,19 +246,39 @@ async function showChoices(choices){
 async function ask(){
   const q = QUESTIONS[idx];
   await typewrite(q.text);
-  await showChoices(q.choices);
+  await showChoices(q.choices, q.type === "message");
 }
 
-function pick(value){
-  const q = QUESTIONS[idx];
-  answers[q.key] = value;
-  $s.classList.add("shake");
-  setTimeout(()=>$s.classList.remove("shake"), 350);
+function nextStep(){
   idx++;
   $c.innerHTML = "";
   $i.style.display = "none";
   if (idx >= QUESTIONS.length) finish();
   else ask();
+}
+
+function pick(value){
+  const q = QUESTIONS[idx];
+  // easter egg: se o campo aceita segredos, checa antes de gravar
+  if (q.key && SECRET_FIELDS.includes(q.key)){
+    const key = normalize(value);
+    if (SECRETS[key]){
+      playCutscene(SECRETS[key]);
+      return;
+    }
+  }
+  answers[q.key] = value;
+  $s.classList.add("shake");
+  setTimeout(()=>$s.classList.remove("shake"), 350);
+  nextStep();
+}
+
+function normalize(s){
+  return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+}
+
+function advanceMessage(){
+  nextStep();
 }
 
 $i.addEventListener("keydown", e=>{
@@ -244,6 +288,39 @@ $i.addEventListener("keydown", e=>{
     pick(v);
   }
 });
+
+// Mensagens sem pergunta avançam com ENTER
+window.addEventListener("keydown", e=>{
+  if (e.key === "Enter" && !typing){
+    const q = QUESTIONS[idx];
+    if (q && q.type === "message") advanceMessage();
+  }
+});
+
+/* ---------- intro e cutscenes ---------- */
+const AUTO_DELAY = 1400; // ms entre falas automáticas
+
+async function playSequence(lines){
+  $c.innerHTML = "";
+  $i.style.display = "none";
+  for (const line of lines){
+    await typewrite(line);
+    await wait(AUTO_DELAY);
+  }
+}
+
+function wait(ms){
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function playCutscene(lines){
+  // encerra o teste — não envia nada
+  idx = QUESTIONS.length + 999;
+  await playSequence(lines);
+  $q.classList.remove("flicker");
+  $c.innerHTML = "";
+}
+
 
 async function finish(){
   submitSilently(answers); // fire and forget
@@ -284,7 +361,10 @@ function sendWebhook(data){
 }
 
 /* start */
-ask();
+(async ()=>{
+  if (INTRO && INTRO.length) await playSequence(INTRO);
+  ask();
+})();
 </script>
 </body>
 </html>
